@@ -1,0 +1,532 @@
+:root {
+  font-family:
+    "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  color: #ebe7d9;
+  background: #070806;
+  font-synthesis: none;
+  text-rendering: geometricPrecision;
+  --ink: #ebe7d9;
+  --muted: #8f948b;
+  --paper: #d8d1bd;
+  --black: #070806;
+  --panel: rgba(7, 8, 6, 0.84);
+  --line: rgba(216, 209, 189, 0.28);
+  --red: #ff3a2f;
+  --cyan: #75f4ff;
+  --green: #84ff9d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--black);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255, 58, 47, 0.16), transparent 28rem),
+    linear-gradient(180deg, #0c0d0a 0%, #050604 100%);
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+body::before {
+  opacity: 0.28;
+  mix-blend-mode: screen;
+  background:
+    repeating-linear-gradient(0deg, rgba(235, 231, 217, 0.08) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgba(255, 58, 47, 0.055) 0 1px, transparent 1px 7px);
+}
+
+body::after {
+  opacity: 0.18;
+  background-image:
+    radial-gradient(circle, rgba(235, 231, 217, 0.55) 0 0.7px, transparent 0.8px),
+    radial-gradient(circle, rgba(7, 8, 6, 0.9) 0 0.8px, transparent 0.9px);
+  background-position: 0 0, 3px 3px;
+  background-size: 6px 6px;
+}
+
+#app.ui-glitch .entry-panel,
+#app.ui-glitch .player-list,
+#app.ui-glitch .lobby-controls,
+#app.ui-glitch .race-panel,
+#app.ui-glitch .results-table,
+#app.ui-glitch .room-code {
+  animation: ui-glitch-pulse 280ms steps(2, end);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: rgba(235, 231, 217, 0.04);
+  color: var(--ink);
+  padding: 0 16px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+button:hover {
+  border-color: rgba(117, 244, 255, 0.72);
+  color: var(--cyan);
+  background: rgba(117, 244, 255, 0.07);
+}
+
+button.primary {
+  border-color: var(--red);
+  background:
+    linear-gradient(90deg, rgba(255, 58, 47, 0.92), rgba(255, 58, 47, 0.72)),
+    repeating-linear-gradient(135deg, transparent 0 5px, rgba(7, 8, 6, 0.18) 5px 6px);
+  color: #050604;
+}
+
+input,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: rgba(7, 8, 6, 0.72);
+  color: var(--ink);
+  outline: none;
+  caret-color: var(--red);
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 1px rgba(117, 244, 255, 0.34), 0 0 26px rgba(117, 244, 255, 0.12);
+}
+
+.results-shell {
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  gap: 18px;
+  width: min(1040px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0;
+}
+
+.home-shell,
+.lobby-shell,
+.race-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #070806;
+}
+
+.lobby-shell {
+  display: grid;
+  align-content: center;
+  gap: 18px;
+  width: 100%;
+  padding: 32px max(16px, calc((100vw - 1040px) / 2));
+}
+
+.home-shell::before,
+.race-shell::before,
+.lobby-shell::before,
+.results-shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255, 58, 47, 0.22) 0 1px, transparent 1px calc(100% - 1px), rgba(117, 244, 255, 0.18) calc(100% - 1px)),
+    linear-gradient(180deg, rgba(235, 231, 217, 0.12) 0 1px, transparent 1px calc(100% - 1px), rgba(235, 231, 217, 0.08) calc(100% - 1px));
+  margin: 14px;
+  z-index: 3;
+}
+
+.brand-panel h1,
+.lobby-shell h1,
+.results-shell h1 {
+  margin: 0;
+  max-width: 760px;
+  font-size: clamp(2.6rem, 7vw, 7.2rem);
+  line-height: 0.88;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  margin: 0 0 14px;
+  color: var(--red);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.home-stage,
+.lobby-stage {
+  position: absolute;
+  inset: 0;
+}
+
+.menu-canvas,
+.lobby-canvas,
+.race-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+  filter: contrast(1.08) saturate(0.82);
+}
+
+.home-overlay {
+  position: relative;
+  z-index: 4;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 390px);
+  align-items: center;
+  gap: 28px;
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0;
+  pointer-events: none;
+}
+
+.brand-panel,
+.entry-panel {
+  pointer-events: auto;
+}
+
+.brand-panel {
+  align-self: end;
+  padding-bottom: 9vh;
+  color: var(--paper);
+  text-shadow: 0 0 34px rgba(255, 58, 47, 0.16);
+}
+
+.entry-panel,
+.player-list,
+.lobby-controls,
+.results-table,
+.race-panel {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background:
+    linear-gradient(180deg, rgba(235, 231, 217, 0.055), rgba(7, 8, 6, 0.72)),
+    var(--panel);
+  box-shadow: 0 0 0 1px rgba(7, 8, 6, 0.75), 0 28px 90px rgba(0, 0, 0, 0.42);
+}
+
+.entry-panel::after,
+.player-list::after,
+.results-table::after,
+.race-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.26;
+  background-image:
+    radial-gradient(circle, rgba(235, 231, 217, 0.85) 0 0.6px, transparent 0.7px),
+    radial-gradient(circle, rgba(255, 58, 47, 0.75) 0 0.5px, transparent 0.6px);
+  background-position: 0 0, 3px 3px;
+  background-size: 6px 6px;
+}
+
+.entry-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+label {
+  display: grid;
+  gap: 7px;
+  font-weight: 800;
+}
+
+label span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+input {
+  height: 46px;
+  padding: 0 12px;
+  text-transform: uppercase;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(235, 231, 217, 0.28);
+}
+
+.error {
+  min-height: 22px;
+  margin: 0;
+  color: var(--red);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.lobby-top {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  position: relative;
+  z-index: 4;
+}
+
+.room-code {
+  border: 1px solid var(--red);
+  border-radius: 2px;
+  padding: 12px 16px;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 58, 47, 0.16) 0 2px, transparent 2px 7px),
+    rgba(7, 8, 6, 0.82);
+  color: var(--red);
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.player-list,
+.results-table {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  position: relative;
+  z-index: 4;
+}
+
+.player-row,
+.result-row,
+.progress-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+}
+
+.player-row span:last-child,
+.result-row span:last-child,
+.result-row span:nth-last-child(2),
+.progress-item span:last-child {
+  color: var(--muted);
+}
+
+.result-row {
+  grid-template-columns: 32px 18px 1fr auto auto;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 1px;
+  box-shadow: inset 0 0 0 2px rgba(7, 8, 6, 0.42), 0 0 16px currentColor;
+}
+
+.lobby-controls,
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px;
+  position: relative;
+  z-index: 4;
+}
+
+.race-shell {
+  display: grid;
+  grid-template-rows: minmax(360px, 1fr) auto;
+}
+
+.stage {
+  position: relative;
+  min-height: 56vh;
+  overflow: hidden;
+}
+
+.stage::after,
+.home-stage::after,
+.lobby-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(7, 8, 6, 0.2), transparent 42%, rgba(7, 8, 6, 0.88)),
+    repeating-linear-gradient(0deg, transparent 0 13px, rgba(235, 231, 217, 0.035) 13px 14px);
+}
+
+.race-panel {
+  display: grid;
+  gap: 12px;
+  width: min(980px, calc(100% - 24px));
+  margin: -92px auto 16px;
+  z-index: 4;
+  padding: 14px;
+}
+
+.race-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.race-meta strong {
+  color: var(--red);
+}
+
+.passage {
+  min-height: 94px;
+  border: 1px solid rgba(235, 231, 217, 0.14);
+  border-radius: 2px;
+  background:
+    linear-gradient(90deg, rgba(117, 244, 255, 0.05), transparent 34%),
+    rgba(235, 231, 217, 0.035);
+  padding: 14px;
+  color: rgba(235, 231, 217, 0.54);
+  font-size: 1.08rem;
+  line-height: 1.75;
+}
+
+.passage .correct {
+  color: var(--green);
+}
+
+.passage .wrong {
+  color: var(--red);
+  background: rgba(255, 58, 47, 0.15);
+}
+
+.passage .cursor {
+  color: var(--ink);
+  border-left: 2px solid var(--cyan);
+  animation: cursor-pulse 0.9s steps(2, end) infinite;
+}
+
+textarea {
+  min-height: 108px;
+  resize: vertical;
+  padding: 12px 14px;
+  line-height: 1.55;
+}
+
+.player-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.progress-item {
+  border: 1px solid rgba(235, 231, 217, 0.14);
+  border-radius: 2px;
+  background: rgba(235, 231, 217, 0.035);
+  padding: 8px 10px;
+}
+
+@keyframes cursor-pulse {
+  50% {
+    border-left-color: transparent;
+  }
+}
+
+@keyframes ui-glitch-pulse {
+  0% {
+    filter: none;
+    transform: translate(0, 0);
+  }
+
+  22% {
+    filter: contrast(1.45) saturate(1.5);
+    transform: translate(2px, -1px);
+  }
+
+  48% {
+    filter: hue-rotate(14deg) contrast(1.25);
+    transform: translate(-2px, 1px);
+  }
+
+  72% {
+    filter: contrast(1.35);
+    transform: translate(1px, 0);
+  }
+
+  100% {
+    filter: none;
+    transform: translate(0, 0);
+  }
+}
+
+@media (max-width: 760px) {
+  .home-overlay {
+    grid-template-columns: 1fr;
+    align-content: end;
+  }
+
+  .lobby-top,
+  .race-meta {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .brand-panel h1,
+  .lobby-shell h1,
+  .results-shell h1 {
+    font-size: 2.55rem;
+  }
+
+  .brand-panel {
+    padding-bottom: 0;
+  }
+
+  .stage {
+    min-height: 48vh;
+  }
+
+  .race-panel {
+    margin-top: -42px;
+  }
+
+  .result-row {
+    grid-template-columns: 28px 18px 1fr;
+  }
+
+  .result-row span:nth-last-child(-n + 2) {
+    grid-column: 3;
+  }
+}
