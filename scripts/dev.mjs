@@ -2,13 +2,18 @@ import { spawn } from "node:child_process";
 import http from "node:http";
 
 const children = [];
+const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const npmCli = process.env.npm_execpath;
+const spawnNpm = (args) => npmCli
+  ? spawn(process.execPath, [npmCli, ...args], { stdio: "inherit" })
+  : spawn(npmCommand, args, { stdio: "inherit", shell: process.platform === "win32" });
 
 const serverHealthy = await checkHealth();
 if (!serverHealthy) {
-  children.push(spawn("npm", ["run", "server"], { stdio: "inherit" }));
+  children.push(spawnNpm(["run", "server"]));
 }
 
-children.push(spawn("npm", ["run", "dev:client"], { stdio: "inherit" }));
+children.push(spawnNpm(["run", "dev:client"]));
 
 const shutdown = () => {
   for (const child of children) {

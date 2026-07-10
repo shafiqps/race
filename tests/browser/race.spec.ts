@@ -6,7 +6,7 @@ test("two players can complete a race and render a nonblank Three.js canvas", as
 
   await hostPage.goto("/");
   await expect(hostPage.locator("canvas")).toBeVisible();
-  expect(await hasVisiblePixels(hostPage.locator("canvas"))).toBe(true);
+  await expectCanvasToRender(hostPage.locator("canvas"));
 
   await hostPage.getByPlaceholder("ADA").fill("Host");
   await hostPage.getByRole("button", { name: "Open Channel" }).click();
@@ -21,13 +21,17 @@ test("two players can complete a race and render a nonblank Three.js canvas", as
   await hostPage.getByRole("button", { name: "Launch" }).click();
 
   await expect(hostPage.locator("canvas")).toBeVisible();
-  expect(await hasVisiblePixels(hostPage.locator("canvas"))).toBe(true);
+  await expectCanvasToRender(hostPage.locator("canvas"));
 
   const passage = await hostPage.locator("#passage").innerText();
   await hostPage.locator("#typingInput").fill(passage);
   await guestPage.locator("#typingInput").fill(passage);
   await expect(hostPage.getByRole("heading", { name: "Readout" })).toBeVisible();
 });
+
+async function expectCanvasToRender(locator: Locator): Promise<void> {
+  await expect.poll(() => hasVisiblePixels(locator), { timeout: 5_000 }).toBe(true);
+}
 
 async function hasVisiblePixels(locator: Locator): Promise<boolean> {
   return locator.evaluate((canvas: HTMLCanvasElement) => {
