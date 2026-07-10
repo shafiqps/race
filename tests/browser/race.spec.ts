@@ -12,12 +12,22 @@ test("two players can complete a race and render a nonblank Three.js canvas", as
   await hostPage.getByRole("button", { name: "Open Channel" }).click();
   const code = await hostPage.locator(".room-code").textContent();
   expect(code).toMatch(/^[A-Z2-9]{5}$/);
+  const hostLobbyCanvas = hostPage.locator(".lobby-canvas");
+  await expectLobbyCanvas(hostLobbyCanvas);
+  await hostLobbyCanvas.evaluate((canvas: HTMLCanvasElement) => {
+    canvas.dataset.sceneInstance = "retained";
+  });
 
   await guestPage.goto("/");
   await guestPage.getByPlaceholder("ADA").fill("Guest");
   await guestPage.getByPlaceholder("A7K2Q").fill(code ?? "");
   await guestPage.getByRole("button", { name: "Join Channel" }).click();
+  await expect(guestPage.locator(".lobby-canvas")).toBeVisible();
+  await expectLobbyCanvas(guestPage.locator(".lobby-canvas"));
+  await expect(hostPage.locator(".player-row")).toHaveCount(2);
+  await expect(hostPage.locator('.lobby-canvas[data-scene-instance="retained"]')).toHaveCount(1);
   await guestPage.getByRole("button", { name: "Sync" }).click();
+  await expect(hostPage.locator('.player-row[data-state="synced"]')).toHaveCount(1);
   await hostPage.getByRole("button", { name: "Launch" }).click();
 
   await expect(hostPage.locator("canvas")).toBeVisible();
@@ -31,6 +41,20 @@ test("two players can complete a race and render a nonblank Three.js canvas", as
 
 async function expectCanvasToRender(locator: Locator): Promise<void> {
   await expect.poll(() => hasVisiblePixels(locator), { timeout: 5_000 }).toBe(true);
+}
+
+async function expectLobbyCanvas(locator: Locator): Promise<void> {
+  await expect(locator).toBeVisible();
+  await expect(locator).toHaveCount(1);
+  await expectCanvasToRender(locator);
+  const dimensions = await locator.evaluate((canvas: HTMLCanvasElement) => ({
+    backingWidth: canvas.width,
+    backingHeight: canvas.height,
+    clientWidth: canvas.clientWidth,
+    clientHeight: canvas.clientHeight
+  }));
+  expect(dimensions.backingWidth).toBeGreaterThanOrEqual(dimensions.clientWidth);
+  expect(dimensions.backingHeight).toBeGreaterThanOrEqual(dimensions.clientHeight);
 }
 
 async function hasVisiblePixels(locator: Locator): Promise<boolean> {

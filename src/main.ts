@@ -27,6 +27,7 @@ let raceStartMs = 0;
 let finished = false;
 
 socket.on("roomState", (room) => {
+  const previousView = view;
   currentRoom = room;
   if (room.status === "lobby") view = "lobby";
   if (room.status === "racing" && view !== "race") {
@@ -37,6 +38,16 @@ socket.on("roomState", (room) => {
   }
   if (room.status === "finished") view = "results";
   pulseUi();
+
+  if (previousView === "lobby" && view === "lobby" && scene instanceof LobbyWorldScene) {
+    refreshLobbyLayout();
+    return;
+  }
+  if (previousView === "race" && view === "race" && scene instanceof ThreeRaceScene) {
+    scene.updatePlayers(room.players);
+    renderPlayerStrip();
+    return;
+  }
   render();
 });
 
@@ -160,7 +171,18 @@ function renderLobby(): void {
   shell.id = "main-content";
   const stage = el("section", "lobby-stage");
   stage.setAttribute("aria-hidden", "true");
+  const layout = createLobbyLayout(currentRoom);
+  shell.append(stage, createSystemHeader(`private channel / ${currentRoom.code}`), layout, createSystemFooter());
+  root.append(createSkipLink(), shell);
+  const lobbyScene = new LobbyWorldScene(stage, currentRoom.code);
+  lobbyScene.updateActivity(
+    currentRoom.players.length,
+    currentRoom.players.filter((player) => player.ready).length
+  );
+  scene = lobbyScene;
+}
 
+function createLobbyLayout(room: Room): HTMLElement {
   const layout = el("section", "lobby-layout");
   const identity = el("header", "lobby-identity");
   identity.innerHTML = `
@@ -169,7 +191,7 @@ function renderLobby(): void {
     <p class="lobby-copy">Share this code with your crew. The host can launch when every incoming runner is synced.</p>
     <div class="code-block">
       <span>race access key</span>
-      <div class="room-code" aria-label="Channel code ${currentRoom.code}">${currentRoom.code}</div>
+      <div class="room-code" aria-label="Channel code ${room.code}">${room.code}</div>
     </div>
   `;
 
@@ -178,12 +200,12 @@ function renderLobby(): void {
   const rosterHeader = el("header", "roster-head");
   rosterHeader.innerHTML = `
     <div><span>02 / active links</span><strong>Runner roster</strong></div>
-    <span>${String(currentRoom.players.length).padStart(2, "0")} / 06</span>
+    <span>${String(room.players.length).padStart(2, "0")} / 06</span>
   `;
   list.append(rosterHeader);
-  currentRoom.players.forEach((player, index) => {
+  room.players.forEach((player, index) => {
     const row = el("div", "player-row");
-    const state = player.id === currentRoom?.hostId ? "host" : player.ready ? "synced" : "standby";
+    const state = player.id === room.hostId ? "host" : player.ready ? "synced" : "standby";
     row.style.setProperty("--player-color", player.color);
     row.dataset.state = state;
     row.innerHTML = `
@@ -197,10 +219,10 @@ function renderLobby(): void {
 
   const controls = el("section", "lobby-controls");
   const controlCopy = el("div", "control-copy");
-  controlCopy.innerHTML = `<span>03 / race command</span><strong>${currentRoom.hostId === socket.id ? "Grid is under your control" : "Awaiting host launch"}</strong>`;
+  controlCopy.innerHTML = `<span>03 / race command</span><strong>${room.hostId === socket.id ? "Grid is under your control" : "Awaiting host launch"}</strong>`;
   controls.append(controlCopy);
-  const me = currentRoom.players.find((player) => player.id === socket.id);
-  const isHost = currentRoom.hostId === socket.id;
+  const me = room.players.find((player) => player.id === socket.id);
+  const isHost = room.hostId === socket.id;
   if (!isHost) {
     const ready = el("button", me?.ready ? "primary" : "", me?.ready ? "Synced" : "Sync");
     ready.addEventListener("click", () => socket.emit("setReady", !me?.ready));
@@ -223,9 +245,23 @@ function renderLobby(): void {
   controls.append(leave, lobbyError);
 
   layout.append(identity, list, controls);
-  shell.append(stage, createSystemHeader(`private channel / ${currentRoom.code}`), layout, createSystemFooter());
-  root.append(createSkipLink(), shell);
-  scene = new LobbyWorldScene(stage);
+  return layout;
+}
+
+function refreshLobbyLayout(): void {
+  if (!currentRoom) return;
+  const existing = root.querySelector<HTMLElement>(".lobby-layout");
+  if (!existing) {
+    render();
+    return;
+  }
+  existing.replaceWith(createLobbyLayout(currentRoom));
+  if (scene instanceof LobbyWorldScene) {
+    scene.updateActivity(
+      currentRoom.players.length,
+      currentRoom.players.filter((player) => player.ready).length
+    );
+  }
 }
 
 function renderRace(): void {
