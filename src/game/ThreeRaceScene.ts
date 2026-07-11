@@ -1,12 +1,9 @@
 import * as THREE from "three";
 import type { Player } from "../../shared/types";
+import { animateHoverRobot, createHoverRobot, type HoverRobot } from "./HoverRobot";
+import { CyberpunkDitherPipeline } from "./CyberpunkDitherPipeline";
 
-interface RunnerMesh {
-  root: THREE.Group;
-  body: THREE.Mesh;
-  head: THREE.Mesh;
-  trail: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
-}
+type RunnerMesh = HoverRobot;
 
 interface SpeedGate {
   root: THREE.Group;
@@ -33,6 +30,7 @@ export class ThreeRaceScene {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(52, 1, 0.1, 250);
   private readonly renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  private readonly dither: CyberpunkDitherPipeline;
   private readonly runners = new Map<string, RunnerMesh>();
   private readonly clock = new THREE.Clock();
   private readonly speedGates: SpeedGate[] = [];
@@ -51,6 +49,7 @@ export class ThreeRaceScene {
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(0x070806);
     this.renderer.shadowMap.enabled = true;
+    this.dither = new CyberpunkDitherPipeline(this.renderer, this.scene, this.camera);
     this.renderer.domElement.className = "race-canvas";
     this.container.append(this.renderer.domElement);
 
@@ -86,6 +85,7 @@ export class ThreeRaceScene {
     this.disposed = true;
     cancelAnimationFrame(this.frame);
     window.removeEventListener("resize", this.resize);
+    this.dither.dispose();
     this.renderer.dispose();
     this.container.replaceChildren();
   }
@@ -157,6 +157,7 @@ export class ThreeRaceScene {
   }
 
   emitTypingEffect(correct: boolean): void {
+    this.dither.pulse(correct);
     const runner = this.focusRunner();
     if (!runner) return;
     const origin = runner.root.position.clone().add(new THREE.Vector3(0, 1.1, -0.35));
@@ -309,42 +310,15 @@ export class ThreeRaceScene {
   }
 
   private createRunner(color: string): RunnerMesh {
-    const root = new THREE.Group();
-    const material = new THREE.MeshStandardMaterial({ color, roughness: 0.38, metalness: 0.34 });
-    const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x080a09, roughness: 0.55, metalness: 0.28 });
-    const visorMaterial = new THREE.MeshStandardMaterial({ color: 0x75f4ff, emissive: 0x12383c, roughness: 0.28 });
-
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 1.15, 8, 16), material);
-    body.position.y = 1.3;
-    body.castShadow = true;
-
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 16), material);
-    head.position.y = 2.36;
-    head.castShadow = true;
-
-    const base = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.18, 0.82), darkMaterial);
-    base.position.y = 0.18;
-    base.castShadow = true;
-
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.08), visorMaterial);
-    visor.position.set(0, 2.42, -0.38);
-    visor.castShadow = true;
-
-    const trail = new THREE.Mesh(
-      new THREE.BoxGeometry(0.16, 0.06, 1),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.26 })
-    );
-    trail.position.y = 0.34;
-    trail.position.z = 0.72;
-
-    root.add(trail, base, body, head, visor);
-    root.position.z = 3.5;
-    return { root, body, head, trail };
+    const robot = createHoverRobot(color);
+    robot.root.position.z = 3.5;
+    return robot;
   }
 
   private animate = (): void => {
     if (this.disposed) return;
-    const elapsed = this.clock.getElapsedTime();
+    const delta = Math.min(this.clock.getDelta(), 0.05);
+    const elapsed = this.clock.elapsedTime;
 
     this.animateDistrict(elapsed);
 
@@ -354,11 +328,10 @@ export class ThreeRaceScene {
       const targetZ = 3.5 - player.progress * (TRACK_LENGTH + 3.5);
       runner.root.position.x += (laneX(index, this.players.length) - runner.root.position.x) * 0.08;
       runner.root.position.z += (targetZ - runner.root.position.z) * 0.08;
-      runner.body.rotation.z = Math.sin(elapsed * 8 + index) * 0.08;
-      runner.head.position.y = 2.36 + Math.sin(elapsed * 10 + index) * 0.04;
-      runner.trail.scale.z = 0.8 + player.wpm * 0.018 + Math.sin(elapsed * 8 + index) * 0.12;
-      runner.trail.material.opacity = THREE.MathUtils.clamp(0.14 + player.wpm * 0.006, 0.14, 0.62);
-      runner.trail.position.z = 0.58 + runner.trail.scale.z * 0.45;
+      const speedRatio = THREE.MathUtils.clamp(player.wpm / 120, 0, 1);
+      animateHoverRobot(runner, elapsed, speedRatio, index * 0.9);
+      runner.body.rotation.z = Math.sin(elapsed * 6 + index) * (0.025 + speedRatio * 0.07);
+      runner.root.rotation.x = -speedRatio * 0.1;
     });
 
     const focusPlayer =
@@ -384,7 +357,9 @@ export class ThreeRaceScene {
       this.camera.lookAt(targetLook);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    const focusSpeed = focusPlayer ? THREE.MathUtils.clamp(focusPlayer.wpm / 120, 0, 1) : 0;
+    this.dither.setMotion(focusSpeed);
+    this.dither.render(delta);
     this.frame = requestAnimationFrame(this.animate);
   };
 
@@ -454,7 +429,7 @@ export class ThreeRaceScene {
     const height = Math.max(1, this.container.clientHeight);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height, false);
+    this.dither.setSize(width, height);
   };
 }
 

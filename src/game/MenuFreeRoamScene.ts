@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import { animateHoverRobot, createHoverRobot } from "./HoverRobot";
+import { CyberpunkDitherPipeline } from "./CyberpunkDitherPipeline";
 
 const TRACK_LENGTH = 70;
 const GROUND_Y = 0;
@@ -32,8 +34,10 @@ export class MenuFreeRoamScene {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(58, 1, 0.1, 240);
   private readonly renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  private readonly dither: CyberpunkDitherPipeline;
   private readonly keys = new Set<string>();
-  private readonly character = this.createRunner();
+  private readonly robot = createHoverRobot();
+  private readonly character = this.robot.root;
   private readonly clock = new THREE.Clock();
   private readonly cameraPosition = new THREE.Vector3(0, 4.8, 15);
   private readonly cameraLook = new THREE.Vector3(0, 1.4, 0);
@@ -58,6 +62,7 @@ export class MenuFreeRoamScene {
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(0x070806);
     this.renderer.shadowMap.enabled = true;
+    this.dither = new CyberpunkDitherPipeline(this.renderer, this.scene, this.camera);
     this.renderer.domElement.className = "menu-canvas";
     this.container.append(this.renderer.domElement);
 
@@ -83,6 +88,7 @@ export class MenuFreeRoamScene {
     this.renderer.domElement.removeEventListener("pointerdown", this.onPointerDown);
     window.removeEventListener("pointerup", this.onPointerUp);
     window.removeEventListener("pointermove", this.onPointerMove);
+    this.dither.dispose();
     this.renderer.dispose();
     this.container.replaceChildren();
   }
@@ -340,27 +346,6 @@ export class MenuFreeRoamScene {
     return texture;
   }
 
-  private createRunner(): THREE.Group {
-    const group = new THREE.Group();
-    const red = new THREE.MeshStandardMaterial({ color: 0xff3a2f, roughness: 0.38, metalness: 0.34 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x080a09, roughness: 0.55, metalness: 0.28 });
-    const cyan = new THREE.MeshStandardMaterial({ color: 0x75f4ff, emissive: 0x12383c, roughness: 0.28 });
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.55, 1.15, 8, 16), red);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 16), red);
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.08), cyan);
-    const base = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.18, 0.82), dark);
-    body.position.y = 1.3;
-    head.position.y = 2.36;
-    visor.position.set(0, 2.42, -0.38);
-    base.position.y = 0.18;
-    body.castShadow = true;
-    head.castShadow = true;
-    visor.castShadow = true;
-    base.castShadow = true;
-    group.add(base, body, head, visor);
-    return group;
-  }
-
   private animate = (): void => {
     if (this.disposed) return;
     const step = Math.min(this.clock.getDelta() * 60, 2);
@@ -382,7 +367,7 @@ export class MenuFreeRoamScene {
     this.cameraLook.lerp(desiredLook, 0.14);
     this.camera.position.copy(this.cameraPosition);
     this.camera.lookAt(this.cameraLook);
-    this.renderer.render(this.scene, this.camera);
+    this.dither.render(step / 60);
     this.frame = requestAnimationFrame(this.animate);
   };
 
@@ -425,16 +410,19 @@ export class MenuFreeRoamScene {
 
   private animateCharacter(step: number): void {
     const speed = this.horizontalVelocity.length();
+    const speedRatio = speed / MAX_MOVE_SPEED;
+    this.dither.setMotion(speedRatio);
     const grounded = this.character.position.y === GROUND_Y;
     this.stride += speed * step * 18;
     this.landingPulse = Math.max(0, this.landingPulse - 0.12 * step);
+    animateHoverRobot(this.robot, this.clock.elapsedTime, speedRatio);
 
     if (speed > 0.01) {
       const targetYaw = Math.atan2(this.horizontalVelocity.x, -this.horizontalVelocity.z);
       this.character.rotation.y = THREE.MathUtils.lerp(this.character.rotation.y, targetYaw, 0.18 * step);
     }
 
-    const bob = grounded ? Math.sin(this.stride) * speed * 0.42 : 0;
+    const bob = grounded ? Math.sin(this.stride) * speed * 0.18 : 0;
     const compression = this.landingPulse * 0.12;
     const stretch = grounded ? 0 : THREE.MathUtils.clamp(this.verticalVelocity * 0.16, -0.08, 0.1);
     this.character.scale.set(
@@ -520,7 +508,7 @@ export class MenuFreeRoamScene {
     const height = Math.max(1, this.container.clientHeight);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height, false);
+    this.dither.setSize(width, height);
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {

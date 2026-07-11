@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { CyberpunkDitherPipeline } from "./CyberpunkDitherPipeline";
 
 interface SceneQuality {
   mobile: boolean;
@@ -92,6 +93,7 @@ export class LobbyWorldScene {
     preserveDrawingBuffer: true,
     powerPreference: "high-performance"
   });
+  private readonly dither: CyberpunkDitherPipeline;
   private readonly clock = new THREE.Clock();
   private readonly quality = chooseQuality();
   private readonly random: () => number;
@@ -135,6 +137,7 @@ export class LobbyWorldScene {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.12;
+    this.dither = new CyberpunkDitherPipeline(this.renderer, this.scene, this.camera, this.reducedMotion);
     this.renderer.domElement.className = "lobby-canvas";
     this.container.append(this.renderer.domElement);
 
@@ -157,6 +160,7 @@ export class LobbyWorldScene {
     window.removeEventListener("pointermove", this.onPointerMove);
     document.removeEventListener("visibilitychange", this.onVisibilityChange);
     this.disposeSceneResources();
+    this.dither.dispose();
     this.renderer.dispose();
     this.container.replaceChildren();
   }
@@ -943,7 +947,8 @@ export class LobbyWorldScene {
     this.animateStorm(elapsed);
     this.animateCamera(elapsed, delta);
 
-    this.renderer.render(this.scene, this.camera);
+    this.dither.setMotion(this.activity * 0.45);
+    this.dither.render(delta);
     if (!this.reducedMotion) this.frame = requestAnimationFrame(this.animate);
   };
 
@@ -1127,10 +1132,10 @@ export class LobbyWorldScene {
     this.baseCameraZ = portrait ? 68 : aspect < 1.35 ? 59 : 52;
     this.targetCameraY = portrait ? 31 : 23;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height, false);
+    this.dither.setSize(width, height);
     if (this.reducedMotion) {
       this.animateCamera(0, 1);
-      this.renderer.render(this.scene, this.camera);
+      this.dither.render(0);
     }
   };
 
