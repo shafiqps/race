@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Player } from "../../shared/types";
 import { animateHoverRobot, createHoverRobot, type HoverRobot } from "./HoverRobot";
 import { CyberpunkDitherPipeline } from "./CyberpunkDitherPipeline";
+import { createPS2SurfaceTexture } from "./PS2Textures";
 
 type RunnerMesh = HoverRobot;
 
@@ -29,13 +30,14 @@ const AMBIENT_STREAKS = 90;
 export class ThreeRaceScene {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(52, 1, 0.1, 250);
-  private readonly renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  private readonly renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
   private readonly dither: CyberpunkDitherPipeline;
   private readonly runners = new Map<string, RunnerMesh>();
   private readonly clock = new THREE.Clock();
   private readonly speedGates: SpeedGate[] = [];
   private readonly tunnelStrips: TunnelStrip[] = [];
   private readonly burstParticles: BurstParticle[] = [];
+  private readonly surfaceTextures: THREE.Texture[] = [];
   private ambientStreaks: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial> | null = null;
   private ambientPositions: Float32Array | null = null;
   private frame = 0;
@@ -48,8 +50,17 @@ export class ThreeRaceScene {
   ) {
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(0x070806);
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.94;
     this.renderer.shadowMap.enabled = true;
-    this.dither = new CyberpunkDitherPipeline(this.renderer, this.scene, this.camera);
+    this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    this.dither = new CyberpunkDitherPipeline(
+      this.renderer,
+      this.scene,
+      this.camera,
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
     this.renderer.domElement.className = "race-canvas";
     this.container.append(this.renderer.domElement);
 
@@ -85,6 +96,7 @@ export class ThreeRaceScene {
     this.disposed = true;
     cancelAnimationFrame(this.frame);
     window.removeEventListener("resize", this.resize);
+    this.surfaceTextures.forEach((texture) => texture.dispose());
     this.dither.dispose();
     this.renderer.dispose();
     this.container.replaceChildren();
@@ -92,6 +104,11 @@ export class ThreeRaceScene {
 
   private buildWorld(): void {
     this.scene.fog = new THREE.Fog(0x070806, 28, 98);
+
+    const groundTexture = createPS2SurfaceTexture("concrete", 18, 26);
+    const trackTexture = createPS2SurfaceTexture("asphalt", 5, 18);
+    const wallTexture = createPS2SurfaceTexture("metal", 2, 18);
+    this.surfaceTextures.push(groundTexture, trackTexture, wallTexture);
 
     const hemi = new THREE.HemisphereLight(0xe9e0c8, 0x101513, 1.4);
     this.scene.add(hemi);
@@ -108,7 +125,7 @@ export class ThreeRaceScene {
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(90, 130),
-      new THREE.MeshStandardMaterial({ color: 0x0b0d0b, roughness: 1, metalness: 0.15 })
+      new THREE.MeshStandardMaterial({ color: 0x0b0d0b, map: groundTexture, roughness: 1, metalness: 0.15 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.z = -22;
@@ -117,7 +134,7 @@ export class ThreeRaceScene {
 
     const track = new THREE.Mesh(
       new THREE.BoxGeometry(24, 0.35, TRACK_LENGTH + 8),
-      new THREE.MeshStandardMaterial({ color: 0x161815, roughness: 0.72, metalness: 0.18 })
+      new THREE.MeshStandardMaterial({ color: 0x161815, map: trackTexture, roughness: 0.82, metalness: 0.12 })
     );
     track.position.set(0, 0, -TRACK_LENGTH / 2 + 2);
     track.receiveShadow = true;
@@ -240,7 +257,13 @@ export class ThreeRaceScene {
   }
 
   private addDataTunnel(): void {
-    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x070908, roughness: 0.74, metalness: 0.36 });
+    const wallTexture = this.surfaceTextures[2];
+    const wallMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0b0d0c,
+      map: wallTexture,
+      roughness: 0.82,
+      metalness: 0.28
+    });
     const cyanMaterial = new THREE.MeshBasicMaterial({ color: 0x75f4ff, transparent: true, opacity: 0.42 });
     const redMaterial = new THREE.MeshBasicMaterial({ color: 0xff3a2f, transparent: true, opacity: 0.5 });
 

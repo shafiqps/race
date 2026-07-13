@@ -49,8 +49,8 @@ export class RoomStore {
     if (guests.length > 0 && guests.some((player) => !player.ready)) {
       throw new Error("All guests must be ready.");
     }
-    room.status = "racing";
-    room.startedAt = now;
+    room.status = "countdown";
+    room.startedAt = now + 3000;
     room.results = [];
     room.players.forEach((player) => {
       player.progress = 0;
@@ -58,6 +58,15 @@ export class RoomStore {
       player.accuracy = 100;
       player.finishedAt = null;
     });
+    return cloneRoom(room);
+  }
+
+  beginRace(code: string, expectedStartAt: number): Room {
+    const room = this.requireRoom(code);
+    if (room.status !== "countdown" || room.startedAt !== expectedStartAt) {
+      return cloneRoom(room);
+    }
+    room.status = "racing";
     return cloneRoom(room);
   }
 

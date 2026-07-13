@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { animateHoverRobot, createHoverRobot } from "./HoverRobot";
 import { CyberpunkDitherPipeline } from "./CyberpunkDitherPipeline";
+import { createPS2SurfaceTexture } from "./PS2Textures";
 
 const TRACK_LENGTH = 70;
 const GROUND_Y = 0;
@@ -33,7 +34,7 @@ interface CityBuilding {
 export class MenuFreeRoamScene {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(58, 1, 0.1, 240);
-  private readonly renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  private readonly renderer = new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true });
   private readonly dither: CyberpunkDitherPipeline;
   private readonly keys = new Set<string>();
   private readonly robot = createHoverRobot();
@@ -46,6 +47,7 @@ export class MenuFreeRoamScene {
   private readonly dataPanels: DataPanel[] = [];
   private readonly signalNodes: SignalNode[] = [];
   private readonly cityBuildings: CityBuilding[] = [];
+  private readonly surfaceTextures: THREE.Texture[] = [];
   private dataMotes: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial> | null = null;
   private dataMotePositions: Float32Array | null = null;
   private grid: THREE.GridHelper | null = null;
@@ -61,8 +63,17 @@ export class MenuFreeRoamScene {
   constructor(private readonly container: HTMLElement) {
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(0x070806);
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.94;
     this.renderer.shadowMap.enabled = true;
-    this.dither = new CyberpunkDitherPipeline(this.renderer, this.scene, this.camera);
+    this.renderer.shadowMap.type = THREE.BasicShadowMap;
+    this.dither = new CyberpunkDitherPipeline(
+      this.renderer,
+      this.scene,
+      this.camera,
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
     this.renderer.domElement.className = "menu-canvas";
     this.container.append(this.renderer.domElement);
 
@@ -88,6 +99,7 @@ export class MenuFreeRoamScene {
     this.renderer.domElement.removeEventListener("pointerdown", this.onPointerDown);
     window.removeEventListener("pointerup", this.onPointerUp);
     window.removeEventListener("pointermove", this.onPointerMove);
+    this.surfaceTextures.forEach((texture) => texture.dispose());
     this.dither.dispose();
     this.renderer.dispose();
     this.container.replaceChildren();
@@ -95,6 +107,9 @@ export class MenuFreeRoamScene {
 
   private buildWorld(): void {
     this.scene.fog = new THREE.Fog(0x070806, 30, 112);
+    const groundTexture = createPS2SurfaceTexture("concrete", 20, 30);
+    const trackTexture = createPS2SurfaceTexture("asphalt", 5, 22);
+    this.surfaceTextures.push(groundTexture, trackTexture);
     this.scene.add(new THREE.HemisphereLight(0xe9e0c8, 0x101513, 1.45));
 
     const sun = new THREE.DirectionalLight(0xff3a2f, 2.2);
@@ -108,7 +123,7 @@ export class MenuFreeRoamScene {
 
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(100, 150),
-      new THREE.MeshStandardMaterial({ color: 0x0b0d0b, roughness: 1, metalness: 0.16 })
+      new THREE.MeshStandardMaterial({ color: 0x0b0d0b, map: groundTexture, roughness: 1, metalness: 0.16 })
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.z = -24;
@@ -117,7 +132,7 @@ export class MenuFreeRoamScene {
 
     const track = new THREE.Mesh(
       new THREE.BoxGeometry(22, 0.32, TRACK_LENGTH),
-      new THREE.MeshStandardMaterial({ color: 0x151714, roughness: 0.76, metalness: 0.16 })
+      new THREE.MeshStandardMaterial({ color: 0x151714, map: trackTexture, roughness: 0.84, metalness: 0.1 })
     );
     track.position.set(0, 0, -TRACK_LENGTH / 2);
     track.receiveShadow = true;

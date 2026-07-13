@@ -12,6 +12,19 @@ export function calculateAccuracy(target: string, typed: string): number {
   return Math.round((correct / typed.length) * 1000) / 10;
 }
 
+export function calculateKeystrokeAccuracy(attempts: number, mistakes: number): number {
+  if (attempts <= 0) return 100;
+  const safeMistakes = Math.max(0, Math.min(attempts, mistakes));
+  return Math.round(((attempts - safeMistakes) / attempts) * 1000) / 10;
+}
+
+export function calculateFlowLevel(streak: number): number {
+  if (streak >= 50) return 3;
+  if (streak >= 25) return 2;
+  if (streak >= 10) return 1;
+  return 0;
+}
+
 export function calculateProgress(target: string, typed: string): number {
   if (target.length === 0) return 0;
   let matchingPrefix = 0;

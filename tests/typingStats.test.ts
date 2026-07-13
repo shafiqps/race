@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateAccuracy,
+  calculateFlowLevel,
+  calculateKeystrokeAccuracy,
   calculateProgress,
   calculateWpm,
   clampProgress,
@@ -31,5 +33,17 @@ describe("typing stats", () => {
     expect(calculateWpm(25, 60000)).toBe(5);
     expect(calculateWpm(50, 30000)).toBe(20);
     expect(calculateWpm(50, 0)).toBe(0);
+  });
+
+  it("retains keystroke mistakes after text is corrected", () => {
+    expect(calculateKeystrokeAccuracy(10, 2)).toBe(80);
+    expect(calculateKeystrokeAccuracy(0, 0)).toBe(100);
+  });
+
+  it("awards flow levels for sustained streaks", () => {
+    expect(calculateFlowLevel(9)).toBe(0);
+    expect(calculateFlowLevel(10)).toBe(1);
+    expect(calculateFlowLevel(25)).toBe(2);
+    expect(calculateFlowLevel(50)).toBe(3);
   });
 });

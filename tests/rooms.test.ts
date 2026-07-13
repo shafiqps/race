@@ -18,9 +18,12 @@ describe("RoomStore", () => {
 
     expect(() => store.startRace("host", 1000)).toThrow("All guests must be ready.");
     store.setReady("guest", true);
-    const racing = store.startRace("host", 1000);
+    const countdown = store.startRace("host", 1000);
+    expect(countdown.status).toBe("countdown");
+    expect(countdown.startedAt).toBe(4000);
+    const racing = store.beginRace(created.code, 4000);
     expect(racing.status).toBe("racing");
-    expect(racing.startedAt).toBe(1000);
+    expect(racing.startedAt).toBe(4000);
 
     const updated = store.updateProgress("guest", { progress: 2, wpm: 72.22, accuracy: 98.88 });
     const guest = updated.players.find((player) => player.id === "guest");

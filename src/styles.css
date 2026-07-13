@@ -965,6 +965,57 @@ kbd {
   color: var(--cyan);
 }
 
+.meta-flow {
+  text-align: right;
+}
+
+.meta-flow > strong {
+  color: var(--green);
+  transition: color 160ms ease, text-shadow 160ms ease;
+}
+
+.meta-flow > strong[data-level="2"],
+.meta-flow > strong[data-level="3"] {
+  color: var(--signal);
+  text-shadow: 0 0 14px rgba(255, 77, 61, 0.5);
+}
+
+.countdown-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-content) + 4);
+  display: grid;
+  place-content: center;
+  place-items: center;
+  gap: 0.65rem;
+  background: rgba(4, 7, 7, 0.58);
+  backdrop-filter: blur(5px);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.countdown-overlay span,
+.countdown-overlay small {
+  color: var(--muted);
+  font-size: 0.6rem;
+}
+
+.countdown-overlay strong {
+  color: var(--signal);
+  font-family: var(--font-display);
+  font-size: clamp(7rem, 22vw, 15rem);
+  line-height: 0.85;
+  text-shadow: 0 0 42px rgba(255, 77, 61, 0.28);
+  animation: countdown-pulse 1s steps(1, end) infinite;
+}
+
+@keyframes countdown-pulse {
+  0% { transform: scale(1.08); opacity: 1; }
+  70% { transform: scale(0.92); opacity: 0.72; }
+}
+
 .typing-deck,
 .lane-board {
   display: grid;
@@ -1798,4 +1849,52 @@ textarea {
     scroll-behavior: auto !important;
     transition-duration: 1ms !important;
   }
+}
+
+/* Low-resolution console finish: the WebGL signal is deliberately chunky while
+   interface type stays full-resolution and legible. */
+.menu-canvas,
+.lobby-canvas,
+.race-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  filter: contrast(1.08) saturate(0.82) brightness(0.94);
+}
+
+body::before {
+  opacity: 0.14;
+  mix-blend-mode: soft-light;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(238, 231, 208, 0.1) 0,
+      rgba(238, 231, 208, 0.1) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 66, 48, 0.018) 0,
+      rgba(255, 66, 48, 0.018) 1px,
+      rgba(78, 226, 232, 0.012) 1px,
+      rgba(78, 226, 232, 0.012) 3px
+    );
+}
+
+.system-header,
+.system-footer,
+.race-meta,
+.deck-label,
+.room-code {
+  text-shadow:
+    0.65px 0 rgba(255, 62, 48, 0.16),
+    -0.65px 0 rgba(76, 225, 232, 0.12);
+}
+
+button,
+input,
+textarea,
+.player-row,
+.progress-item {
+  image-rendering: pixelated;
 }

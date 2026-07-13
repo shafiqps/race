@@ -30,6 +30,11 @@ test("two players can complete a race and render a nonblank Three.js canvas", as
   await expect(hostPage.locator('.player-row[data-state="synced"]')).toHaveCount(1);
   await hostPage.getByRole("button", { name: "Launch" }).click();
 
+  await expect(hostPage.locator(".countdown-overlay")).toBeVisible();
+  await expect(guestPage.locator(".countdown-overlay")).toBeVisible();
+  await expect(hostPage.locator("#typingInput")).toBeDisabled();
+  await expect(hostPage.locator("#typingInput")).toBeEnabled({ timeout: 5_000 });
+
   await expect(hostPage.locator("canvas")).toBeVisible();
   await expectCanvasToRender(hostPage.locator("canvas"));
 

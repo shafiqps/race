@@ -4,7 +4,8 @@ import { LobbyWorldScene } from "./game/LobbyWorldScene";
 import { MenuFreeRoamScene } from "./game/MenuFreeRoamScene";
 import { ThreeRaceScene } from "./game/ThreeRaceScene";
 import {
-  calculateAccuracy,
+  calculateFlowLevel,
+  calculateKeystrokeAccuracy,
   calculateProgress,
   calculateWpm,
   countCorrectPrefix
@@ -25,16 +26,23 @@ let scene: ActiveScene | null = null;
 let typedText = "";
 let raceStartMs = 0;
 let finished = false;
+let keystrokeAttempts = 0;
+let mistakes = 0;
+let currentStreak = 0;
+let longestStreak = 0;
+let countdownTimer: number | null = null;
 
 socket.on("roomState", (room) => {
   const previousView = view;
   currentRoom = room;
+  if (room.status === "countdown") {
+    view = "race";
+    resetRaceSession(room.startedAt ?? Date.now());
+  }
   if (room.status === "lobby") view = "lobby";
   if (room.status === "racing" && view !== "race") {
     view = "race";
-    typedText = "";
-    finished = false;
-    raceStartMs = room.startedAt ?? Date.now();
+    resetRaceSession(room.startedAt ?? Date.now());
   }
   if (room.status === "finished") view = "results";
   pulseUi();
@@ -54,8 +62,6 @@ socket.on("roomState", (room) => {
 socket.on("raceStarted", (room) => {
   currentRoom = room;
   view = "race";
-  typedText = "";
-  finished = false;
   raceStartMs = room.startedAt ?? Date.now();
   pulseUi();
   render();
@@ -81,6 +87,7 @@ socket.on("roomError", (message) => {
 render();
 
 function render(): void {
+  clearCountdownTimer();
   scene?.dispose();
   scene = null;
   root.replaceChildren();
@@ -275,6 +282,7 @@ function renderRace(): void {
     <div class="race-meta">
       <div class="meta-group"><span>channel</span><strong>${currentRoom.code}</strong></div>
       <div class="meta-group meta-live"><span>live telemetry</span><strong id="liveStats" aria-live="polite">0 WPM · 100% sync</strong></div>
+      <div class="meta-group meta-flow"><span>flow chain</span><strong id="flowStats">0 streak · flow 0</strong></div>
     </div>
     <div class="typing-deck">
       <div class="deck-label"><span>01 / transmission</span><span>type the sequence exactly</span></div>
@@ -290,25 +298,35 @@ function renderRace(): void {
   shell.append(stage, createSystemHeader("race feed / live"), overlay);
   root.append(createSkipLink(), shell);
 
+  if (currentRoom.status === "countdown") {
+    const countdown = el("div", "countdown-overlay");
+    countdown.innerHTML = `<span>race link synchronized</span><strong id="countdownValue">3</strong><small>hold position</small>`;
+    shell.append(countdown);
+  }
+
   scene = new ThreeRaceScene(stage, socket.id);
   scene.updatePlayers(currentRoom.players);
   renderPassage();
   renderPlayerStrip();
 
   const input = document.querySelector<HTMLTextAreaElement>("#typingInput");
-  input?.focus();
+  if (input) input.disabled = currentRoom.status !== "racing";
+  if (currentRoom.status === "countdown") startCountdown(currentRoom.startedAt ?? Date.now());
+  else input?.focus();
   input?.addEventListener("input", () => {
     if (!currentRoom || !input || finished) return;
     const previousTypedText = typedText;
     typedText = input.value;
+    recordNewKeystrokes(currentRoom.passage, previousTypedText, typedText);
     const correct = countCorrectPrefix(currentRoom.passage, typedText);
     const elapsed = Date.now() - raceStartMs;
     const payload = {
       progress: calculateProgress(currentRoom.passage, typedText),
       wpm: calculateWpm(correct, elapsed),
-      accuracy: calculateAccuracy(currentRoom.passage, typedText)
+      accuracy: calculateKeystrokeAccuracy(keystrokeAttempts, mistakes)
     };
     updateLiveStats(payload.wpm, payload.accuracy);
+    updateFlowStats();
     renderPassage();
     if (typedText.length > previousTypedText.length && scene instanceof ThreeRaceScene) {
       const typedCharIndex = typedText.length - 1;
@@ -436,6 +454,54 @@ function pulseUi(): void {
   root.classList.remove("ui-glitch");
   void root.offsetWidth;
   root.classList.add("ui-glitch");
+}
+
+function updateFlowStats(): void {
+  const stats = document.querySelector<HTMLElement>("#flowStats");
+  if (!stats) return;
+  const flowLevel = calculateFlowLevel(currentStreak);
+  stats.textContent = `${currentStreak} streak · flow ${flowLevel}`;
+  stats.dataset.level = String(flowLevel);
+}
+
+function recordNewKeystrokes(target: string, previous: string, next: string): void {
+  if (next.length <= previous.length || !next.startsWith(previous)) return;
+  for (let index = previous.length; index < next.length; index += 1) {
+    keystrokeAttempts += 1;
+    if (next[index] === target[index]) {
+      currentStreak += 1;
+      longestStreak = Math.max(longestStreak, currentStreak);
+    } else {
+      mistakes += 1;
+      currentStreak = 0;
+    }
+  }
+}
+
+function resetRaceSession(startedAt: number): void {
+  typedText = "";
+  finished = false;
+  raceStartMs = startedAt;
+  keystrokeAttempts = 0;
+  mistakes = 0;
+  currentStreak = 0;
+  longestStreak = 0;
+}
+
+function startCountdown(startedAt: number): void {
+  const update = (): void => {
+    const value = document.querySelector<HTMLElement>("#countdownValue");
+    if (!value) return;
+    value.textContent = String(Math.max(1, Math.ceil((startedAt - Date.now()) / 1000)));
+  };
+  update();
+  countdownTimer = window.setInterval(update, 100);
+}
+
+function clearCountdownTimer(): void {
+  if (countdownTimer === null) return;
+  window.clearInterval(countdownTimer);
+  countdownTimer = null;
 }
 
 function createSkipLink(): HTMLAnchorElement {

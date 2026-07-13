@@ -56,8 +56,16 @@ export function createRaceServer(httpServer: http.Server): Server<ClientToServer
           raceIo.to(room.code).emit("roomState", room);
           return;
         }
-        raceIo.to(room.code).emit("raceStarted", room);
         raceIo.to(room.code).emit("roomState", room);
+        const expectedStartAt = room.startedAt;
+        if (room.status === "countdown" && expectedStartAt !== null) {
+          setTimeout(() => {
+            const racingRoom = store.beginRace(room.code, expectedStartAt);
+            if (racingRoom.status !== "racing") return;
+            raceIo.to(racingRoom.code).emit("raceStarted", racingRoom);
+            raceIo.to(racingRoom.code).emit("roomState", racingRoom);
+          }, Math.max(0, expectedStartAt - Date.now()));
+        }
       } catch (error) {
         socket.emit("roomError", getErrorMessage(error));
       }

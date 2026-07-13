@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { CyberpunkDitherPipeline } from "./CyberpunkDitherPipeline";
+import { createPS2SurfaceTexture } from "./PS2Textures";
 
 interface SceneQuality {
   mobile: boolean;
@@ -89,7 +90,7 @@ export class LobbyWorldScene {
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(50, 1, 0.1, 420);
   private readonly renderer = new THREE.WebGLRenderer({
-    antialias: true,
+    antialias: false,
     preserveDrawingBuffer: true,
     powerPreference: "high-performance"
   });
@@ -132,11 +133,12 @@ export class LobbyWorldScene {
     private readonly channelCode = "GRID"
   ) {
     this.random = mulberry32(hashString(channelCode));
-    this.renderer.setPixelRatio(this.quality.pixelRatio);
+    this.renderer.setPixelRatio(Math.min(1, this.quality.pixelRatio));
     this.renderer.setClearColor(VOID);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.toneMappingExposure = 1.02;
+    this.renderer.shadowMap.type = THREE.BasicShadowMap;
     this.dither = new CyberpunkDitherPipeline(this.renderer, this.scene, this.camera, this.reducedMotion);
     this.renderer.domElement.className = "lobby-canvas";
     this.container.append(this.renderer.domElement);
@@ -240,9 +242,16 @@ export class LobbyWorldScene {
   }
 
   private addForegroundDeck(): void {
+    const boulevardTexture = createPS2SurfaceTexture("asphalt", 4, 28);
+    const deckTexture = createPS2SurfaceTexture("metal", 5, 5);
     const boulevard = new THREE.Mesh(
       new THREE.PlaneGeometry(38, 280),
-      new THREE.MeshStandardMaterial({ color: 0x070a0c, roughness: 0.34, metalness: 0.72 })
+      new THREE.MeshStandardMaterial({
+        color: 0x0a0d0e,
+        map: boulevardTexture,
+        roughness: 0.74,
+        metalness: 0.28
+      })
     );
     boulevard.rotation.x = -Math.PI / 2;
     boulevard.position.set(0, -0.08, -88);
@@ -250,7 +259,7 @@ export class LobbyWorldScene {
 
     const deck = new THREE.Mesh(
       new THREE.CylinderGeometry(30, 36, 0.65, 8),
-      new THREE.MeshStandardMaterial({ color: 0x0a0e10, roughness: 0.42, metalness: 0.62 })
+      new THREE.MeshStandardMaterial({ color: 0x101416, map: deckTexture, roughness: 0.7, metalness: 0.34 })
     );
     deck.position.set(0, -0.42, 5);
     deck.rotation.y = Math.PI * 0.125;
