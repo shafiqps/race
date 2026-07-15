@@ -31,6 +31,11 @@ let mistakes = 0;
 let currentStreak = 0;
 let longestStreak = 0;
 let countdownTimer: number | null = null;
+let finishWatchTimer: number | null = null;
+let raceAlertTimer: number | null = null;
+let lastLocalRank: number | null = null;
+let lastFlowLevel = 0;
+let finalStretchAnnounced = false;
 
 socket.on("roomState", (room) => {
   const previousView = view;
@@ -44,7 +49,7 @@ socket.on("roomState", (room) => {
     view = "race";
     resetRaceSession(room.startedAt ?? Date.now());
   }
-  if (room.status === "finished") view = "results";
+  if (room.status === "intermission" || room.status === "finished") view = "results";
   pulseUi();
 
   if (previousView === "lobby" && view === "lobby" && scene instanceof LobbyWorldScene) {
@@ -54,6 +59,7 @@ socket.on("roomState", (room) => {
   if (previousView === "race" && view === "race" && scene instanceof ThreeRaceScene) {
     scene.updatePlayers(room.players);
     renderPlayerStrip();
+    updateFinishWatch();
     return;
   }
   render();
@@ -63,14 +69,17 @@ socket.on("raceStarted", (room) => {
   currentRoom = room;
   view = "race";
   raceStartMs = room.startedAt ?? Date.now();
+  lastLocalRank = getLocalRank(room);
   pulseUi();
   render();
 });
 
 socket.on("progressUpdate", (room) => {
+  detectRaceMoments(room);
   currentRoom = room;
   if (scene instanceof ThreeRaceScene) scene.updatePlayers(room.players);
   renderPlayerStrip();
+  updateFinishWatch();
 });
 
 socket.on("raceFinished", (room) => {
@@ -88,6 +97,8 @@ render();
 
 function render(): void {
   clearCountdownTimer();
+  clearFinishWatchTimer();
+  clearRaceAlertTimer();
   scene?.dispose();
   scene = null;
   root.replaceChildren();
@@ -281,6 +292,7 @@ function renderRace(): void {
   overlay.innerHTML = `
     <div class="race-meta">
       <div class="meta-group"><span>channel</span><strong>${currentRoom.code}</strong></div>
+      <div class="meta-group"><span>match heat</span><strong>${currentRoom.heatNumber} / ${currentRoom.totalHeats}</strong></div>
       <div class="meta-group meta-live"><span>live telemetry</span><strong id="liveStats" aria-live="polite">0 WPM · 100% sync</strong></div>
       <div class="meta-group meta-flow"><span>flow chain</span><strong id="flowStats">0 streak · flow 0</strong></div>
     </div>
@@ -294,6 +306,11 @@ function renderRace(): void {
       <div class="deck-label"><span>02 / lane telemetry</span><span>live race position</span></div>
       <div class="player-strip" id="playerStrip"></div>
     </div>
+    <section class="finish-watch" id="finishWatch" hidden aria-live="polite">
+      <div><span>finish confirmed</span><strong id="finishPlace">Position pending</strong></div>
+      <div><span>spectator feed</span><strong id="finishDeadline">Waiting for rivals</strong></div>
+    </section>
+    <div class="race-alert" id="raceAlert" hidden aria-live="assertive"></div>
   `;
   shell.append(stage, createSystemHeader("race feed / live"), overlay);
   root.append(createSkipLink(), shell);
@@ -323,16 +340,23 @@ function renderRace(): void {
     const payload = {
       progress: calculateProgress(currentRoom.passage, typedText),
       wpm: calculateWpm(correct, elapsed),
-      accuracy: calculateKeystrokeAccuracy(keystrokeAttempts, mistakes)
+      accuracy: calculateKeystrokeAccuracy(keystrokeAttempts, mistakes),
+      streak: currentStreak,
+      flowLevel: calculateFlowLevel(currentStreak)
     };
     updateLiveStats(payload.wpm, payload.accuracy);
     updateFlowStats();
+    checkFinalStretch(payload.progress);
     renderPassage();
     if (typedText.length > previousTypedText.length && scene instanceof ThreeRaceScene) {
       const typedCharIndex = typedText.length - 1;
       const correctChar = typedText[typedCharIndex] === currentRoom.passage[typedCharIndex];
-      scene.emitTypingEffect(correctChar);
-      if (!correctChar) pulseUi();
+      scene.emitTypingEffect(correctChar, payload.flowLevel);
+      if (!correctChar) {
+        scene.triggerStumble();
+        showRaceAlert("SIGNAL BREAK // FLOW LOST", "error");
+        pulseUi();
+      }
     }
     if (payload.progress >= 1) {
       finished = true;
@@ -340,6 +364,7 @@ function renderRace(): void {
       pulseUi();
       socket.emit("finishRace", { ...payload, finishedAt: Date.now() });
       input.disabled = true;
+      updateFinishWatch();
     } else {
       socket.emit("updateProgress", payload);
     }
@@ -348,18 +373,19 @@ function renderRace(): void {
 
 function renderResults(): void {
   if (!currentRoom) return;
+  const matchComplete = currentRoom.status === "finished";
   const shell = el("main", "results-shell");
   shell.id = "main-content";
   const resultsHeading = el("header", "results-heading");
   resultsHeading.innerHTML = `
-    <p class="eyebrow">Transmission complete / ${currentRoom.code}</p>
+    <p class="eyebrow">${matchComplete ? "Match complete" : `Heat ${currentRoom.heatNumber} complete`} / ${currentRoom.code}</p>
     <h1>Readout</h1>
-    <p>Final velocity and signal accuracy from the grid.</p>
+    <p>${matchComplete ? "Final match standings across all three transmissions." : `Prepare for heat ${currentRoom.heatNumber + 1}. The next transmission increases in difficulty.`}</p>
   `;
   const table = el("section", "results-table");
   table.setAttribute("aria-label", "Race results");
   const tableHeader = el("div", "results-header");
-  tableHeader.innerHTML = `<span>rank</span><span>runner</span><span>velocity</span><span>sync</span>`;
+  tableHeader.innerHTML = `<span>rank</span><span>runner</span><span>velocity</span><span>sync</span><span>points</span>`;
   table.append(tableHeader);
   const ranked = currentRoom.results.length > 0 ? currentRoom.results : currentRoom.players.map((player, index) => ({
     playerId: player.id,
@@ -368,25 +394,37 @@ function renderResults(): void {
     wpm: player.wpm,
     accuracy: player.accuracy,
     finishedAt: player.finishedAt ?? 0,
-    place: index + 1
+    place: index + 1,
+    didFinish: player.finishedAt !== null,
+    pointsAwarded: 0
   }));
+  if (matchComplete) {
+    const scores = new Map(currentRoom.players.map((player) => [player.id, player.score]));
+    ranked.sort((left, right) =>
+      (scores.get(right.playerId) ?? 0) - (scores.get(left.playerId) ?? 0) || left.place - right.place
+    );
+  }
   ranked.forEach((result, index) => {
-    const row = el("div", index === 0 ? "result-row winner-row" : "result-row");
+    const rowClass = result.didFinish
+      ? index === 0 ? "result-row winner-row" : "result-row"
+      : "result-row dnf-row";
+    const row = el("div", rowClass);
     row.style.setProperty("--player-color", result.color);
     row.innerHTML = `
-      <span class="result-place">${String(result.place).padStart(2, "0")}</span>
-      <span class="result-runner"><span class="swatch"></span><strong>${escapeHtml(result.name)}</strong>${index === 0 ? "<small>grid leader</small>" : ""}</span>
-      <span class="result-metric"><small>velocity</small><strong>${result.wpm}</strong><em>WPM</em></span>
-      <span class="result-metric"><small>sync</small><strong>${result.accuracy}</strong><em>%</em></span>
+      <span class="result-place">${matchComplete ? String(index + 1).padStart(2, "0") : result.didFinish ? String(result.place).padStart(2, "0") : "DNF"}</span>
+      <span class="result-runner"><span class="swatch"></span><strong>${escapeHtml(result.name)}</strong>${index === 0 ? `<small>${matchComplete ? "match champion" : "heat leader"}</small>` : !result.didFinish ? "<small>signal timeout</small>" : matchComplete ? `<small>heat finish #${result.place}</small>` : ""}</span>
+      <span class="result-metric"><small>velocity</small><strong>${result.didFinish ? result.wpm : "--"}</strong><em>WPM</em></span>
+      <span class="result-metric result-sync"><small>sync</small><strong>${result.accuracy}</strong><em>%</em></span>
+      <span class="result-metric result-points"><small>${matchComplete ? "total" : "awarded"}</small><strong>${matchComplete ? currentRoom!.players.find((player) => player.id === result.playerId)?.score ?? 0 : `+${result.pointsAwarded}`}</strong><em>PTS</em></span>
     `;
     table.append(row);
   });
   const actions = el("div", "result-actions");
   const actionCopy = el("div", "control-copy");
-  actionCopy.innerHTML = `<span>next command</span><strong>${currentRoom.hostId === socket.id ? "Run the protocol again" : "Wait for the host or disconnect"}</strong>`;
+  actionCopy.innerHTML = `<span>next command</span><strong>${currentRoom.hostId === socket.id ? matchComplete ? "Run a new match" : `Launch heat ${currentRoom.heatNumber + 1} of ${currentRoom.totalHeats}` : "Wait for the host or disconnect"}</strong>`;
   actions.append(actionCopy);
   if (currentRoom.hostId === socket.id) {
-    const restart = el("button", "primary", "New Vector");
+    const restart = el("button", "primary", matchComplete ? "New Match" : "Next Heat");
     restart.addEventListener("click", () => socket.emit("startRace"));
     actions.append(restart);
   }
@@ -423,20 +461,59 @@ function renderPlayerStrip(): void {
   const strip = document.querySelector<HTMLDivElement>("#playerStrip");
   if (!strip) return;
   strip.replaceChildren();
-  currentRoom.players.forEach((player) => {
+  const rankedPlayers = rankPlayers(currentRoom);
+  rankedPlayers.forEach((player, index) => {
     const item = el("div", "progress-item");
     const progress = Math.round(player.progress * 100);
+    const ahead = rankedPlayers[index - 1];
+    const gap = ahead
+      ? Math.max(0, Math.ceil((ahead.progress - player.progress) * currentRoom!.passage.length))
+      : 0;
+    const gapLabel = player.finishedAt !== null
+      ? "finished"
+      : index === 0 ? "race leader" : `${gap} chars behind`;
     item.style.setProperty("--player-color", player.color);
     item.style.setProperty("--progress", `${progress}%`);
     item.innerHTML = `
       <span class="swatch"></span>
+      <span class="lane-rank">#${index + 1}</span>
       <strong>${escapeHtml(player.name)}</strong>
       <span>${progress}%</span>
+      <small>${gapLabel}</small>
       <span class="progress-track" aria-hidden="true"><i></i></span>
     `;
-    item.setAttribute("aria-label", `${player.name}, ${progress} percent complete`);
+    item.setAttribute("aria-label", `${player.name}, position ${index + 1}, ${progress} percent complete, ${gapLabel}`);
     strip.append(item);
   });
+}
+
+function updateFinishWatch(): void {
+  if (!finished || !currentRoom) return;
+  const panel = document.querySelector<HTMLElement>("#finishWatch");
+  if (!panel) return;
+  panel.hidden = false;
+  const myResult = currentRoom.results.find((result) => result.playerId === socket.id);
+  const place = panel.querySelector<HTMLElement>("#finishPlace");
+  if (place) place.textContent = myResult ? `Position #${myResult.place}` : "Position pending";
+
+  const updateDeadline = (): void => {
+    const deadline = panel.querySelector<HTMLElement>("#finishDeadline");
+    if (!deadline || !currentRoom) return;
+    if (currentRoom.finishDeadline === null) {
+      deadline.textContent = "Waiting for rivals";
+      return;
+    }
+    const seconds = Math.max(0, Math.ceil((currentRoom.finishDeadline - Date.now()) / 1000));
+    deadline.textContent = `${seconds}s until grid closes`;
+  };
+  updateDeadline();
+  if (finishWatchTimer === null) finishWatchTimer = window.setInterval(updateDeadline, 250);
+}
+
+function clearFinishWatchTimer(): void {
+  if (finishWatchTimer === null) return;
+  window.clearInterval(finishWatchTimer);
+  finishWatchTimer = null;
 }
 
 function updateLiveStats(wpm: number, accuracy: number): void {
@@ -462,6 +539,11 @@ function updateFlowStats(): void {
   const flowLevel = calculateFlowLevel(currentStreak);
   stats.textContent = `${currentStreak} streak · flow ${flowLevel}`;
   stats.dataset.level = String(flowLevel);
+  if (flowLevel > lastFlowLevel) {
+    const labels = ["", "FLOW ONLINE", "FLOW SURGE", "MAXIMUM FLOW"];
+    showRaceAlert(`${labels[flowLevel]} // ${currentStreak} STREAK`, "flow");
+  }
+  lastFlowLevel = flowLevel;
 }
 
 function recordNewKeystrokes(target: string, previous: string, next: string): void {
@@ -486,6 +568,69 @@ function resetRaceSession(startedAt: number): void {
   mistakes = 0;
   currentStreak = 0;
   longestStreak = 0;
+  lastLocalRank = null;
+  lastFlowLevel = 0;
+  finalStretchAnnounced = false;
+}
+
+function rankPlayers(room: Room): Room["players"] {
+  const resultPlaces = new Map(room.results.map((result) => [result.playerId, result.place]));
+  return [...room.players].sort((left, right) => {
+    const leftPlace = resultPlaces.get(left.id);
+    const rightPlace = resultPlaces.get(right.id);
+    if (leftPlace !== undefined || rightPlace !== undefined) {
+      if (leftPlace === undefined) return 1;
+      if (rightPlace === undefined) return -1;
+      return leftPlace - rightPlace;
+    }
+    return right.progress - left.progress || right.wpm - left.wpm;
+  });
+}
+
+function getLocalRank(room: Room): number | null {
+  const index = rankPlayers(room).findIndex((player) => player.id === socket.id);
+  return index < 0 ? null : index + 1;
+}
+
+function detectRaceMoments(room: Room): void {
+  const nextRank = getLocalRank(room);
+  if (nextRank === null) return;
+  if (lastLocalRank !== null && nextRank < lastLocalRank) {
+    showRaceAlert(`OVERTAKE // POSITION #${nextRank}`, "flow");
+  } else if (lastLocalRank !== null && nextRank > lastLocalRank) {
+    showRaceAlert(`RIVAL PASSED // POSITION #${nextRank}`, "error");
+  }
+  lastLocalRank = nextRank;
+  const me = room.players.find((player) => player.id === socket.id);
+  if (me) checkFinalStretch(me.progress);
+}
+
+function checkFinalStretch(progress: number): void {
+  if (progress < 0.8 || finalStretchAnnounced) return;
+  finalStretchAnnounced = true;
+  showRaceAlert("FINAL STRETCH // HOLD THE LINE", "flow");
+}
+
+function showRaceAlert(message: string, tone: "flow" | "error"): void {
+  const alert = document.querySelector<HTMLElement>("#raceAlert");
+  if (!alert) return;
+  if (raceAlertTimer !== null) window.clearTimeout(raceAlertTimer);
+  alert.hidden = false;
+  alert.dataset.tone = tone;
+  alert.textContent = message;
+  alert.classList.remove("is-active");
+  void alert.offsetWidth;
+  alert.classList.add("is-active");
+  raceAlertTimer = window.setTimeout(() => {
+    alert.hidden = true;
+    raceAlertTimer = null;
+  }, 1300);
+}
+
+function clearRaceAlertTimer(): void {
+  if (raceAlertTimer === null) return;
+  window.clearTimeout(raceAlertTimer);
+  raceAlertTimer = null;
 }
 
 function startCountdown(startedAt: number): void {

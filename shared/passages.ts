@@ -28,6 +28,18 @@ export const PASSAGE_ENTRIES: PassageEntry[] = [
 
 export const PASSAGES = PASSAGE_ENTRIES.map((entry) => entry.text);
 
-export function selectPassage(seed: number = Date.now()): string {
-  return PASSAGES[Math.abs(seed) % PASSAGES.length];
+export function selectPassage(
+  seed: number = Date.now(),
+  difficulty?: PassageDifficulty
+): string {
+  const pool = difficulty
+    ? PASSAGE_ENTRIES.filter((entry) => entry.difficulty === difficulty).map((entry) => entry.text)
+    : PASSAGES;
+  return pool[Math.abs(seed) % pool.length];
+}
+
+export function difficultyForHeat(heatNumber: number): PassageDifficulty {
+  if (heatNumber <= 1) return "easy";
+  if (heatNumber === 2) return "medium";
+  return "hard";
 }

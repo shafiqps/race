@@ -51,7 +51,11 @@ export function createRaceServer(httpServer: http.Server): Server<ClientToServer
     socket.on("startRace", () => {
       try {
         const existingRoom = store.getRoomForPlayer(socket.id);
-        const room = existingRoom?.status === "finished" ? store.restartLobby(socket.id) : store.startRace(socket.id);
+        const room = existingRoom?.status === "finished"
+          ? store.restartLobby(socket.id)
+          : existingRoom?.status === "intermission"
+            ? store.startNextHeat(socket.id)
+            : store.startRace(socket.id);
         if (room.status === "lobby") {
           raceIo.to(room.code).emit("roomState", room);
           return;
@@ -82,9 +86,19 @@ export function createRaceServer(httpServer: http.Server): Server<ClientToServer
 
     socket.on("finishRace", (payload) => {
       try {
+        const beforeFinish = store.getRoomForPlayer(socket.id);
         const room = store.finishRace(socket.id, payload);
-        raceIo.to(room.code).emit(room.status === "finished" ? "raceFinished" : "progressUpdate", room);
+        raceIo.to(room.code).emit(room.status === "racing" ? "progressUpdate" : "raceFinished", room);
         raceIo.to(room.code).emit("roomState", room);
+        if (beforeFinish?.finishDeadline === null && room.finishDeadline !== null) {
+          const expectedDeadline = room.finishDeadline;
+          setTimeout(() => {
+            const finishedRoom = store.finalizeRace(room.code, expectedDeadline);
+            if (!finishedRoom) return;
+            raceIo.to(finishedRoom.code).emit("raceFinished", finishedRoom);
+            raceIo.to(finishedRoom.code).emit("roomState", finishedRoom);
+          }, Math.max(0, expectedDeadline - Date.now()));
+        }
       } catch (error) {
         socket.emit("roomError", getErrorMessage(error));
       }

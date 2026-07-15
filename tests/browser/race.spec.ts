@@ -34,14 +34,39 @@ test("two players can complete a race and render a nonblank Three.js canvas", as
   await expect(guestPage.locator(".countdown-overlay")).toBeVisible();
   await expect(hostPage.locator("#typingInput")).toBeDisabled();
   await expect(hostPage.locator("#typingInput")).toBeEnabled({ timeout: 5_000 });
+  await expect(hostPage.locator(".lane-rank")).toHaveCount(2);
 
   await expect(hostPage.locator("canvas")).toBeVisible();
   await expectCanvasToRender(hostPage.locator("canvas"));
 
   const passage = await hostPage.locator("#passage").innerText();
+  await guestPage.locator("#typingInput").fill(passage.slice(0, 12));
+  await expect(hostPage.locator("#raceAlert")).toContainText("RIVAL PASSED");
+  await hostPage.locator("#typingInput").fill("x");
+  await expect(hostPage.locator("#raceAlert")).toContainText("SIGNAL BREAK");
+  await hostPage.locator("#typingInput").fill("");
   await hostPage.locator("#typingInput").fill(passage);
+  await expect(hostPage.locator("#flowStats")).toContainText("flow 3");
+  await expect(hostPage.locator("#raceAlert")).toContainText("OVERTAKE");
+  await expect(hostPage.locator("#finishWatch")).toBeVisible();
+  await expect(hostPage.locator("#finishPlace")).toHaveText("Position #1");
+  await expect(hostPage.locator("#finishDeadline")).toContainText("until grid closes");
   await guestPage.locator("#typingInput").fill(passage);
   await expect(hostPage.getByRole("heading", { name: "Readout" })).toBeVisible();
+  await expect(hostPage.getByText("Heat 1 complete", { exact: false })).toBeVisible();
+
+  for (const heat of [2, 3]) {
+    await hostPage.getByRole("button", { name: "Next Heat" }).click();
+    await expect(hostPage.locator("#typingInput")).toBeEnabled({ timeout: 5_000 });
+    await expect(hostPage.locator(".race-meta")).toContainText(`${heat} / 3`);
+    const nextPassage = await hostPage.locator("#passage").innerText();
+    await hostPage.locator("#typingInput").fill(nextPassage);
+    await guestPage.locator("#typingInput").fill(nextPassage);
+    await expect(hostPage.getByRole("heading", { name: "Readout" })).toBeVisible();
+  }
+
+  await expect(hostPage.getByText("Match complete", { exact: false })).toBeVisible();
+  await expect(hostPage.locator(".result-points").first()).toContainText("PTS");
 });
 
 async function expectCanvasToRender(locator: Locator): Promise<void> {

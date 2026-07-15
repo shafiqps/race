@@ -43,6 +43,7 @@ export class ThreeRaceScene {
   private frame = 0;
   private disposed = false;
   private players: Player[] = [];
+  private stumble = 0;
 
   constructor(
     private readonly container: HTMLElement,
@@ -173,12 +174,12 @@ export class ThreeRaceScene {
     this.addAmbientStreaks();
   }
 
-  emitTypingEffect(correct: boolean): void {
+  emitTypingEffect(correct: boolean, flowLevel = 0): void {
     this.dither.pulse(correct);
     const runner = this.focusRunner();
     if (!runner) return;
     const origin = runner.root.position.clone().add(new THREE.Vector3(0, 1.1, -0.35));
-    const count = correct ? 5 : 9;
+    const count = correct ? 5 + flowLevel * 2 : 9;
     for (let i = 0; i < count; i += 1) {
       const material = new THREE.MeshBasicMaterial({
         color: correct ? 0x75f4ff : 0xff3a2f,
@@ -196,6 +197,10 @@ export class ThreeRaceScene {
       this.burstParticles.push({ mesh, velocity, life: correct ? 18 : 24, maxLife: correct ? 18 : 24 });
       this.scene.add(mesh);
     }
+  }
+
+  triggerStumble(): void {
+    this.stumble = 1;
   }
 
   triggerFinishBurst(): void {
@@ -342,20 +347,7 @@ export class ThreeRaceScene {
     if (this.disposed) return;
     const delta = Math.min(this.clock.getDelta(), 0.05);
     const elapsed = this.clock.elapsedTime;
-
-    this.animateDistrict(elapsed);
-
-    this.players.forEach((player, index) => {
-      const runner = this.runners.get(player.id);
-      if (!runner) return;
-      const targetZ = 3.5 - player.progress * (TRACK_LENGTH + 3.5);
-      runner.root.position.x += (laneX(index, this.players.length) - runner.root.position.x) * 0.08;
-      runner.root.position.z += (targetZ - runner.root.position.z) * 0.08;
-      const speedRatio = THREE.MathUtils.clamp(player.wpm / 120, 0, 1);
-      animateHoverRobot(runner, elapsed, speedRatio, index * 0.9);
-      runner.body.rotation.z = Math.sin(elapsed * 6 + index) * (0.025 + speedRatio * 0.07);
-      runner.root.rotation.x = -speedRatio * 0.1;
-    });
+    this.stumble = Math.max(0, this.stumble - delta * 3.2);
 
     const focusPlayer =
       this.players.find((player) => player.id === this.focusPlayerId) ??
@@ -363,11 +355,33 @@ export class ThreeRaceScene {
         if (!leader || player.progress > leader.progress) return player;
         return leader;
       }, null);
+    const focusFlow = focusPlayer?.flowLevel ?? 0;
+
+    this.animateDistrict(elapsed, focusFlow);
+
+    this.players.forEach((player, index) => {
+      const runner = this.runners.get(player.id);
+      if (!runner) return;
+      const targetZ = 3.5 - player.progress * (TRACK_LENGTH + 3.5);
+      runner.root.position.x += (laneX(index, this.players.length) - runner.root.position.x) * 0.08;
+      runner.root.position.z += (targetZ - runner.root.position.z) * 0.08;
+      const speedRatio = THREE.MathUtils.clamp(player.wpm / 120 + player.flowLevel * 0.09, 0, 1);
+      animateHoverRobot(runner, elapsed, speedRatio, index * 0.9);
+      runner.body.rotation.z = Math.sin(elapsed * 6 + index) * (0.025 + speedRatio * 0.07);
+      runner.root.rotation.x = -speedRatio * 0.1;
+      if (player.id === this.focusPlayerId && this.stumble > 0) {
+        const shake = Math.sin(elapsed * 48) * this.stumble;
+        runner.body.rotation.z += shake * 0.16;
+        runner.head.rotation.z += shake * 0.08;
+        runner.root.position.x += shake * 0.025;
+      }
+    });
+
     const focusRunner = focusPlayer ? this.runners.get(focusPlayer.id) : null;
 
     if (focusRunner) {
       const targetCamera = new THREE.Vector3(
-        focusRunner.root.position.x,
+        focusRunner.root.position.x + Math.sin(elapsed * 52) * this.stumble * 0.08,
         4.6,
         focusRunner.root.position.z + 8.6
       );
@@ -380,18 +394,24 @@ export class ThreeRaceScene {
       this.camera.lookAt(targetLook);
     }
 
-    const focusSpeed = focusPlayer ? THREE.MathUtils.clamp(focusPlayer.wpm / 120, 0, 1) : 0;
-    this.dither.setMotion(focusSpeed);
+    const focusSpeed = focusPlayer
+      ? THREE.MathUtils.clamp(focusPlayer.wpm / 120 + focusFlow * 0.1, 0, 1)
+      : 0;
+    const targetFov = 52 + focusFlow * 1.8 - this.stumble * 1.2;
+    this.camera.fov += (targetFov - this.camera.fov) * 0.08;
+    this.camera.updateProjectionMatrix();
+    this.dither.setMotion(THREE.MathUtils.clamp(focusSpeed + this.stumble * 0.18, 0, 1));
     this.dither.render(delta);
     this.frame = requestAnimationFrame(this.animate);
   };
 
-  private animateDistrict(elapsed: number): void {
-    this.animateAmbientStreaks();
+  private animateDistrict(elapsed: number, flowLevel: number): void {
+    this.animateAmbientStreaks(flowLevel);
     this.animateBurstParticles();
 
     this.speedGates.forEach((gate) => {
-      const pulse = 0.48 + Math.sin(elapsed * 4.4 + gate.phase) * 0.16;
+      const pulse = 0.48 + flowLevel * 0.08 + Math.sin(elapsed * (4.4 + flowLevel) + gate.phase) * 0.16;
+      gate.root.scale.y = 1 + flowLevel * 0.018;
       gate.root.children.forEach((child) => {
         if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshBasicMaterial) {
           child.material.opacity = pulse;
@@ -400,16 +420,16 @@ export class ThreeRaceScene {
     });
 
     this.tunnelStrips.forEach((strip) => {
-      strip.mesh.material.opacity = 0.24 + Math.sin(elapsed * 5.2 + strip.phase) * 0.18;
-      strip.mesh.scale.z = 0.76 + Math.sin(elapsed * 2.8 + strip.phase) * 0.22;
+      strip.mesh.material.opacity = 0.24 + flowLevel * 0.055 + Math.sin(elapsed * (5.2 + flowLevel) + strip.phase) * 0.18;
+      strip.mesh.scale.z = 0.76 + flowLevel * 0.08 + Math.sin(elapsed * 2.8 + strip.phase) * 0.22;
     });
   }
 
-  private animateAmbientStreaks(): void {
+  private animateAmbientStreaks(flowLevel: number): void {
     if (!this.ambientStreaks || !this.ambientPositions) return;
     for (let i = 0; i < AMBIENT_STREAKS; i += 1) {
       const zIndex = i * 3 + 2;
-      this.ambientPositions[zIndex] += 0.34 + (i % 7) * 0.025;
+      this.ambientPositions[zIndex] += 0.34 + flowLevel * 0.09 + (i % 7) * 0.025;
       if (this.ambientPositions[zIndex] > 9) {
         this.ambientPositions[i * 3] = (Math.random() - 0.5) * 31;
         this.ambientPositions[i * 3 + 1] = 0.8 + Math.random() * 5.8;

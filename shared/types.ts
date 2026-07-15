@@ -1,4 +1,4 @@
-export type RaceStatus = "lobby" | "countdown" | "racing" | "finished";
+export type RaceStatus = "lobby" | "countdown" | "racing" | "intermission" | "finished";
 
 export interface Player {
   id: string;
@@ -9,6 +9,9 @@ export interface Player {
   wpm: number;
   accuracy: number;
   finishedAt: number | null;
+  score: number;
+  streak: number;
+  flowLevel: number;
 }
 
 export interface RaceResult {
@@ -19,6 +22,8 @@ export interface RaceResult {
   accuracy: number;
   finishedAt: number;
   place: number;
+  didFinish: boolean;
+  pointsAwarded: number;
 }
 
 export interface Room {
@@ -28,6 +33,9 @@ export interface Room {
   status: RaceStatus;
   passage: string;
   startedAt: number | null;
+  finishDeadline: number | null;
+  heatNumber: number;
+  totalHeats: number;
   results: RaceResult[];
 }
 
@@ -35,6 +43,8 @@ export interface ProgressPayload {
   progress: number;
   wpm: number;
   accuracy: number;
+  streak?: number;
+  flowLevel?: number;
 }
 
 export interface FinishPayload extends ProgressPayload {

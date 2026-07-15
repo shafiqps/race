@@ -27,7 +27,7 @@ describe("socket room flow", () => {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
   });
 
-  it("creates a room, joins a guest, starts, broadcasts progress, and finishes", async () => {
+  it("creates a room, joins a guest, starts, broadcasts progress, and finishes a heat", async () => {
     const host = connect(url);
     const guest = connect(url);
     sockets.push(host, guest);
@@ -62,8 +62,9 @@ describe("socket room flow", () => {
     host.emit("finishRace", { progress: 1, wpm: 38, accuracy: 96, finishedAt: 2000 });
     guest.emit("finishRace", { progress: 1, wpm: 40, accuracy: 95, finishedAt: 1900 });
     const finished = await finishedPromise;
-    expect(finished.status).toBe("finished");
+    expect(finished.status).toBe("intermission");
     expect(finished.results).toHaveLength(2);
+    expect(finished.results.map((result) => result.pointsAwarded)).toEqual([5, 3]);
   });
 });
 
