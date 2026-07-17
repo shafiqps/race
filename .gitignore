@@ -1,6 +1,7 @@
 node_modules/
 node_modules
 dist/
+dist-server/
 test-results/
 playwright-report/
 .cache/

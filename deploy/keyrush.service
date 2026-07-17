@@ -1,0 +1,40 @@
+[Unit]
+Description=Keyrush typing race server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=keyrush
+Group=keyrush
+WorkingDirectory=/srv/keyrush
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3001
+Environment=CORS_ORIGIN=https://keyrush.167-233-144-222.sslip.io
+ExecStart=/usr/bin/node /srv/keyrush/dist-server/index.cjs
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+UMask=0027
+MemoryMax=512M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
